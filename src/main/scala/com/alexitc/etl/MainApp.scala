@@ -76,8 +76,8 @@ object MainApp {
     val outputLocation = s"$outputHost/$modelKey"
     val hashFunc = udf(md5 _)
     val appendDF = dataFrame
-        .withColumn("hash", hashFunc(struct(dataFrame.columns.map(dataFrame(_)) : _*)))
-        .withColumn("insertionTime", current_timestamp())
+        .withColumn("row_hash", hashFunc(struct(dataFrame.columns.map(dataFrame(_)) : _*)))
+        .withColumn("created_at", current_timestamp())
     appendDF.write
         .format("csv")
         .option("header", "true")
