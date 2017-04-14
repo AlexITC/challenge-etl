@@ -7,7 +7,6 @@ parallelExecution in Test := false
 fork in Test := true
 
 scalacOptions ++= Seq(
-  "-Xfatal-warnings",
   "-unchecked",
   "-deprecation",
   "-feature",
@@ -26,7 +25,9 @@ scalacOptions ++= Seq(
 
 lazy val versions = new {
   val spark = "2.1.0"
+  val mysql = "5.1.41"
 }
 
 libraryDependencies += "org.apache.spark" %% "spark-core" % versions.spark
 libraryDependencies += "org.apache.spark" %% "spark-sql" % versions.spark
+libraryDependencies += "mysql" % "mysql-connector-java" % versions.mysql

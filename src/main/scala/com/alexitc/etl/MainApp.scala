@@ -1,40 +1,77 @@
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 object MainApp {
 
-  private def checkInFilePath: String = {
-    val resource = this.getClass.getClassLoader.getResource("csv/check-in.csv")
-    if (resource == null) {
-      sys.error("The input file was not found")
-    } else {
-      resource.toURI.getPath
-    }
-  }
+  val conf: SparkConf = new SparkConf()
+      .setMaster("local")
+      .setAppName("ETL-Challenge")
 
+  val sparkSession = SparkSession.builder().config(conf).getOrCreate()
+
+  // sbt "run mysql person 127.0.1.1 33060 hackathon root root"
   def main(args: Array[String]): Unit = {
-
-    val conf: SparkConf = new SparkConf()
-        .setMaster("local")
-        .setAppName("ETL-Challenge")
-
-    val sparkSession = SparkSession.builder().config(conf).getOrCreate()
-
+    // TODO: Parse arguments using scopt
     try {
-      println("Reading DataFrame")
-      val dataFrame = sparkSession
-            .read
-            .option("header", "true")
-            .csv(checkInFilePath)
-
-      println("Saving DataFrame")
-      dataFrame.write
-          .format("csv")
-          .option("header", "true")
-          .save("output_csv")
-
+      args(0) match {
+        case "csv" => preImportCSV(args)
+        case "mysql" => preImportJDBC(args)
+        case opt => sys.error(s"Unknown option: $opt")
+      }
     } finally {
       sparkSession.stop()
     }
+  }
+
+  def preImportCSV(args: Array[String]) = {
+    val modelKey = args(1)
+    val inputPath = args(2)
+    importCSV(modelKey, inputPath)
+  }
+
+  def preImportJDBC(args: Array[String]) = {
+    val modelKey = args(1)
+    val host = args(2)
+    val port = args(3)
+    val database = args(4)
+    val user = args(5)
+    val password = args(6)
+    val url = s"jdbc:mysql://$host:$port/$database"
+    importJDBC(modelKey, url, user, password)
+  }
+
+  // TODO: Read it from arguments
+  val outputHost = "hdfs://localhost:9000"
+
+  def importCSV(modelKey: String, csvLocation: String) = {
+    val dataFrame = sparkSession
+        .read
+        .option("header", "true")
+        .csv(csvLocation)
+
+    importDataFrame(modelKey, dataFrame)
+  }
+
+  def importJDBC(modelKey: String, jdbcUrl: String, user: String, password: String) = {
+    val dataFrame = sparkSession
+        .read
+        .format("jdbc")
+        .option("url", jdbcUrl)
+        .option("user", user)
+        .option("password", password)
+        .option("dbtable", modelKey)
+        .load()
+
+    importDataFrame(modelKey, dataFrame)
+  }
+
+  def importDataFrame(modelKey: String, dataFrame: DataFrame) = {
+    val outputLocation = s"$outputHost/$modelKey"
+
+    // TODO: Verify if the data is already there
+    dataFrame.write
+        .format("csv")
+        .option("header", "true")
+        .save(outputLocation)
   }
 }
