@@ -1,5 +1,7 @@
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{ColumnName, DataFrame, SaveMode, SparkSession}
+
+import scala.util.control.NonFatal
 
 object MainApp {
 
@@ -9,7 +11,7 @@ object MainApp {
 
   val sparkSession = SparkSession.builder().config(conf).getOrCreate()
 
-  // sbt "run mysql person 127.0.1.1 33060 hackathon root root"
+  // sbt "run mysql hdfs://localhost:9000 person 127.0.1.1 33060 hackathon root root"
   def main(args: Array[String]): Unit = {
     // TODO: Parse arguments using scopt
     try {
@@ -24,35 +26,34 @@ object MainApp {
   }
 
   def preImportCSV(args: Array[String]) = {
-    val modelKey = args(1)
-    val inputPath = args(2)
-    importCSV(modelKey, inputPath)
+    val outputLocation = args(1)
+    val modelKey = args(2)
+    val inputPath = args(3)
+    importCSV(outputLocation, modelKey, inputPath)
   }
 
   def preImportJDBC(args: Array[String]) = {
-    val modelKey = args(1)
-    val host = args(2)
-    val port = args(3)
-    val database = args(4)
-    val user = args(5)
-    val password = args(6)
+    val outputLocation = args(1)
+    val modelKey = args(2)
+    val host = args(3)
+    val port = args(4)
+    val database = args(5)
+    val user = args(6)
+    val password = args(7)
     val url = s"jdbc:mysql://$host:$port/$database"
-    importJDBC(modelKey, url, user, password)
+    importJDBC(outputLocation, modelKey, url, user, password)
   }
 
-  // TODO: Read it from arguments
-  val outputHost = "hdfs://localhost:9000"
-
-  def importCSV(modelKey: String, csvLocation: String) = {
+  def importCSV(outputLocation: String, modelKey: String, csvLocation: String) = {
     val dataFrame = sparkSession
         .read
         .option("header", "true")
         .csv(csvLocation)
 
-    importDataFrame(modelKey, dataFrame)
+    importDataFrame(outputLocation, modelKey, dataFrame)
   }
 
-  def importJDBC(modelKey: String, jdbcUrl: String, user: String, password: String) = {
+  def importJDBC(outputLocation: String, modelKey: String, jdbcUrl: String, user: String, password: String) = {
     val dataFrame = sparkSession
         .read
         .format("jdbc")
@@ -62,16 +63,69 @@ object MainApp {
         .option("dbtable", modelKey)
         .load()
 
-    importDataFrame(modelKey, dataFrame)
+    importDataFrame(outputLocation, modelKey, dataFrame)
   }
 
-  def importDataFrame(modelKey: String, dataFrame: DataFrame) = {
-    val outputLocation = s"$outputHost/$modelKey"
+  def importDataFrame(outputLocation: String, modelKey: String, dataFrame: DataFrame) = {
+    val existingDataFrame = readModelAsDataFrame(outputLocation, modelKey)
 
-    // TODO: Verify if the data is already there
+    val newDataFrame = existingDataFrame
+        .map { processUpdates(outputLocation, modelKey, _, dataFrame) }
+        .getOrElse(dataFrame)
+
+    writeDataFrameToLocation(newDataFrame, modelLocation(outputLocation, modelKey))
+  }
+
+  def writeDataFrameToLocation(dataFrame: DataFrame, location: String) = {
     dataFrame.write
-        .format("csv")
+        .mode(SaveMode.Overwrite)
         .option("header", "true")
-        .save(outputLocation)
+        .csv(location)
+  }
+
+  def processUpdates(outputLocation: String, modelKey: String, existingDataFrame: DataFrame, newDataFrame: DataFrame): DataFrame = {
+    // In order to update the same csv, we need to backup it first in order to read and write simultaneously
+    val backupLocation = modelLocation(outputLocation, modelKey) + "_bak"
+    writeDataFrameToLocation(existingDataFrame, backupLocation)
+
+    // now use the backup dataframe
+    val backupDataFrame = readDataFrameFromLocation(backupLocation).get
+    val modelId = backupDataFrame.columns.filter(_.toLowerCase == "id").head // assuming id column exists
+    val columns = backupDataFrame
+        .columns
+        .filter(_ != modelId)
+        .map { name => new ColumnName(s"new.$name") }
+        .toList
+
+    println(s"EXISTING COLUMNS = ${backupDataFrame.columns.mkString(",")}")
+    backupDataFrame
+        .as("old")
+        .join(newDataFrame.as("new"), Seq(modelId), "outer")
+        .select(new ColumnName(modelId) :: columns: _*)
+  }
+
+  def modelLocation(outputLocation: String, modelKey: String) = {
+    s"$outputLocation/$modelKey"
+  }
+
+  def readModelAsDataFrame(outputLocation: String, modelKey: String): Option[DataFrame] = {
+    readDataFrameFromLocation(modelLocation(outputLocation, modelKey))
+  }
+
+  def readDataFrameFromLocation(location: String): Option[DataFrame] = {
+    try {
+      val dataFrame = sparkSession
+          .read
+          .option("header", "true")
+          .csv(location)
+
+      println("DATAFRAME ALREADY EXISTS !!!")
+      dataFrame.show(10)
+      Some(dataFrame)
+    } catch {
+      case NonFatal(_) =>
+        println("DATAFRAME DOESN'T EXISTS !!!")
+        None
+    }
   }
 }
