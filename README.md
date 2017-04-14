@@ -2,26 +2,61 @@
 
 ## ETL Challenge
 
-In this challenge you have to design and implement an ETL (Extract / Transform / Load) process. 
+This project implements a very simple ETL.
 
-Your challenge is to move the data from MySQL and CSV to a MongoDB or Cassandra or Hadoop database.
+There is a main application built with Scala and Spark which can receive a CSV file or a MySQL table and load it into a Hadoop File System.
 
-You should do an initial migration and once it is ready, make an incremental update.
+At this time, the application doesn't make incremental updates.
 
-Files:
+## Running
 
- - MySQL create database file
- - MySQL Data file
- - MySQL updates for incremental update
- - CSV data file for checkin / checkout
- - Database diagram
+Before being able to run the application you will need to install some dependencies:
+- JDK 8
+- SBT
 
-![Alt text](colorado-university-hackathon-etl.png?raw=true "Data Diagram")
+### Importing CSV file
 
-Deliverables:
+Run the following command:
+```
+sbt "run csv [key] [csv-file-path]"
+```
 
- - Docs
- - Install scripts
- - Running example
+Where:
+- [key] is the name of the model that you are importing.
+- [csv-file-path] is the path to the csv file to import.
 
-PS: No real data is used.
+For example, run the following to import the example `check-in.csv` file:
+
+```
+sbt "run csv checkin csv/check-in.csv"
+```
+
+
+### Importing MySQL table
+
+Run the following command:
+```
+sbt "run mysql [table] [host] [port] [database] [user] [password]"
+```
+
+Where:
+- [table] is the name of the table that you are importing (it is handle the same way as key while importing a csv file).
+- [host] the mysql host.
+- [port] the mysql port.
+- [database] the mysql database where the table is located.
+- [user] the mysql user.
+- [password] the mysql password.
+
+For example, run the following to import the example `person` table:
+
+```
+sbt "run mysql person 127.0.1.1 33060 hackathon root root"
+```
+
+## Development
+
+In order to do development related tasks, you will need to also install `docker` and `docker-compose`.
+
+To set up the environment, run `docker-compose up` and then `./fill_mysql.sh`.
+
+Use `sbt compile` to compile the application.
