@@ -10,7 +10,7 @@ When the application is run, it detects if the model already exists to perform i
 
 ## Running
 
-Before being able to run the application you will need to install some dependencies:
+Before being able to run the application you will need to install the following dependencies:
 - JDK 8
 - SBT
 
