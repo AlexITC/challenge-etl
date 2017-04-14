@@ -1,5 +1,7 @@
+import java.security.MessageDigest
 import org.apache.spark.SparkConf
-import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.{DataFrame, SparkSession, Row}
+import org.apache.spark.sql.functions._
 
 object MainApp {
 
@@ -21,6 +23,11 @@ object MainApp {
     } finally {
       sparkSession.stop()
     }
+  }
+
+  def md5(row: Row) = {
+    val digest = MessageDigest.getInstance("MD5")
+    digest.digest(row.mkString("$").getBytes).map("%02x".format(_)).mkString
   }
 
   def preImportCSV(args: Array[String]) = {
@@ -67,11 +74,14 @@ object MainApp {
 
   def importDataFrame(modelKey: String, dataFrame: DataFrame) = {
     val outputLocation = s"$outputHost/$modelKey"
-
-    // TODO: Verify if the data is already there
-    dataFrame.write
+    val hashFunc = udf(md5 _)
+    val appendDF = dataFrame
+        .withColumn("hash", hashFunc(struct(dataFrame.columns.map(dataFrame(_)) : _*)))
+        .withColumn("insertionTime", current_timestamp())
+    appendDF.write
         .format("csv")
         .option("header", "true")
+        .mode("overwrite")
         .save(outputLocation)
   }
 }
